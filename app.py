@@ -41,7 +41,7 @@ PIPELINE_STAGES = [
         "name": "Scoring",
         "owner": "Azlan",
         "file": os.path.join("data", "04_scored.jsonl"),
-        "desc": "Opportunity scoring (0-100), Band assignment (A/B/C) & reasons"
+        "desc": "Opportunity scoring (0-100), Band assignment (A/B/C/D) & reasons"
     },
     {
         "stage_num": 5,
@@ -65,17 +65,16 @@ PIPELINE_STAGES = [
 # ==============================================================================
 
 def find_available_datasets():
-    """Discover all JSONL data files currently present in workspace."""
+    """Discover all real JSONL pipeline data files present in workspace."""
     found = []
     
-    # Priority paths
+    # Priority order: latest stages first
     priority_paths = [
         os.path.join("data", "05_drafts.jsonl"),
-        os.path.join("data", "01_leads.jsonl"),
-        os.path.join("data", "sample_10.jsonl"),
         os.path.join("data", "04_scored.jsonl"),
         os.path.join("data", "03_research.jsonl"),
         os.path.join("data", "02_visual.jsonl"),
+        os.path.join("data", "01_leads.jsonl"),
         os.path.join("data", "06_approved.jsonl"),
     ]
     
@@ -83,11 +82,11 @@ def find_available_datasets():
         if os.path.exists(p) and p not in found:
             found.append(p)
             
-    # Check for any other jsonl files inside data/
+    # Check for any other stage jsonl files inside data/
     if os.path.exists("data"):
-        for f in os.listdir("data"):
+        for f in sorted(os.listdir("data")):
             full_p = os.path.join("data", f)
-            if f.endswith(".jsonl") and full_p not in found:
+            if f.endswith(".jsonl") and "sample" not in f.lower() and full_p not in found:
                 found.append(full_p)
                 
     return found
@@ -271,6 +270,7 @@ def render_app():
         .badge-band-a { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.35); }
         .badge-band-b { background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.35); }
         .badge-band-c { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35); }
+        .badge-band-d { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.35); }
         .badge-band-raw { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); }
         
         .badge-status-approved { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
@@ -343,35 +343,34 @@ def render_app():
 
     available_datasets = find_available_datasets()
     if not available_datasets:
-        sample_path = os.path.join("data", "sample_10.jsonl")
-        available_datasets = [sample_path] if os.path.exists(sample_path) else ["data/sample_10.jsonl"]
+        st.sidebar.warning("No stage files found in data/. Run pipeline stages (01_collect.py, 02_visual.py, 04_score.py) to generate data.")
+        st.stop()
 
     # Format clean labels for datasets
     dataset_labels = {}
     for p in available_datasets:
         count = len(load_jsonl(p))
-        if "01_leads.jsonl" in p:
-            label = f"Stage 1: Collected Leads ({count} rows)"
-        elif "02_visual.jsonl" in p:
-            label = f"Stage 2: Visual Audit ({count} rows)"
+        if "04_scored.jsonl" in p:
+            label = f"Stage 4: Scored Leads ({count} rows)"
         elif "03_research.jsonl" in p:
             label = f"Stage 3: LLM Research ({count} rows)"
-        elif "04_scored.jsonl" in p:
-            label = f"Stage 4: Scored Leads ({count} rows)"
+        elif "02_visual.jsonl" in p:
+            label = f"Stage 2: Visual Audit ({count} rows)"
+        elif "01_leads.jsonl" in p:
+            label = f"Stage 1: Collected Leads ({count} rows)"
         elif "05_drafts.jsonl" in p:
             label = f"Stage 5: Drafted Emails ({count} rows)"
         elif "06_approved.jsonl" in p:
             label = f"Stage 6: Approved Outbox ({count} rows)"
-        elif "sample_10.jsonl" in p:
-            label = f"Sample 10 Dataset ({count} rows)"
         else:
             label = f"{os.path.basename(p)} ({count} rows)"
         dataset_labels[label] = p
 
+    # Default to Stage 4 (scored real leads) or Stage 5 if available, else first available
     default_idx = 0
     labels_list = list(dataset_labels.keys())
     for idx, lbl in enumerate(labels_list):
-        if "Sample 10" in lbl:
+        if "Stage 4: Scored Leads" in lbl:
             default_idx = idx
             break
         elif "Stage 5" in lbl:
@@ -382,7 +381,7 @@ def render_app():
         "Active Dataset",
         options=labels_list,
         index=default_idx,
-        help="Choose upstream stage data to review in the dashboard."
+        help="Choose real upstream stage data to review in the dashboard."
     )
     selected_dataset_path = dataset_labels[selected_dataset_label]
 
@@ -395,8 +394,8 @@ def render_app():
 
     band_filter = st.sidebar.multiselect(
         "Filter by Band",
-        options=["Band A", "Band B", "Band C", "Raw (Stage 1)"],
-        default=["Band A", "Band B", "Band C", "Raw (Stage 1)"]
+        options=["Band A", "Band B", "Band C", "Band D"],
+        default=["Band A", "Band B", "Band C", "Band D"]
     )
 
     status_filter = st.sidebar.multiselect(
@@ -420,10 +419,25 @@ def render_app():
     raw_leads = load_jsonl(selected_dataset_path)
     saved_decisions = load_decisions(DEFAULT_APPROVED_PATH)
 
+    # Cross-reference Stage 3 LLM findings if viewing another stage like Stage 4
+    stage3_path = os.path.join("data", "03_research.jsonl")
+    stage3_findings = {}
+    if os.path.exists(stage3_path) and selected_dataset_path != stage3_path:
+        for r in load_jsonl(stage3_path):
+            lid = r.get("lead_id")
+            f_list = r.get("findings")
+            if lid and f_list:
+                stage3_findings[lid] = f_list
+
     leads_list = []
     for lead in raw_leads:
         lid = lead.get("lead_id", "unknown_id")
         lead_copy = dict(lead)
+        
+        # Enrich findings from Stage 3 if not present in active record
+        if not lead_copy.get("findings") and lid in stage3_findings:
+            lead_copy["findings"] = stage3_findings[lid]
+            
         if lid in saved_decisions:
             lead_copy["decision"] = saved_decisions[lid].get("decision", "pending")
             lead_copy["final_subject"] = saved_decisions[lid].get("final_subject", lead.get("subject", ""))
@@ -447,11 +461,6 @@ def render_app():
         category = lead.get("category", "")
         band = lead.get("band")
         
-        if band in ["A", "B", "C"]:
-            band_label = f"Band {band}"
-        else:
-            band_label = "Raw (Stage 1)"
-            
         decision = lead.get("decision", "pending")
         status_label = "Approved" if decision in ["approve", "edit"] else ("Rejected" if decision == "reject" else "Pending")
         
@@ -460,7 +469,7 @@ def render_app():
             if not (q in name.lower() or q in domain.lower() or q in city.lower() or q in category.lower()):
                 continue
                 
-        if band_label not in band_filter:
+        if band and f"Band {band}" not in band_filter:
             continue
             
         if status_label not in status_filter:
@@ -486,7 +495,7 @@ def render_app():
     <div class="leadforge-header">
         <div>
             <div class="leadforge-title">LEADFORGE <span style="color:#6366f1; font-weight:400;">| Review Screen</span></div>
-            <div class="leadforge-subtitle">Stage 6 Human-in-the-Loop Review Dashboard — Inspect findings, audit website visuals, refine personalized email outreach, and deliver to Mailtrap sandbox.</div>
+            <div class="leadforge-subtitle">Stage 6 Human-in-the-Loop Review Dashboard — Inspect real business findings, audit website health, refine outreach emails, and approve for sandbox delivery.</div>
         </div>
         <div>
             <span style="background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.4); padding: 0.4rem 0.85rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; color: #a5b4fc;">
@@ -503,7 +512,7 @@ def render_app():
     band_a_count = sum(1 for l in leads_list if l.get("band") == "A")
     band_b_count = sum(1 for l in leads_list if l.get("band") == "B")
     band_c_count = sum(1 for l in leads_list if l.get("band") == "C")
-    raw_stage1_count = sum(1 for l in leads_list if not l.get("band"))
+    band_d_count = sum(1 for l in leads_list if l.get("band") == "D")
 
     kpi_cols = st.columns(6)
     with kpi_cols[0]:
@@ -517,9 +526,7 @@ def render_app():
     with kpi_cols[4]:
         st.markdown(f'<div class="metric-card"><div class="metric-value" style="color:#4ade80;">{band_a_count}</div><div class="metric-label">Band A (High)</div></div>', unsafe_allow_html=True)
     with kpi_cols[5]:
-        tier_val = f"{band_b_count + band_c_count}" if not raw_stage1_count else f"{raw_stage1_count} Raw"
-        tier_lbl = "Band B / C" if not raw_stage1_count else "Stage 1 Leads"
-        st.markdown(f'<div class="metric-card"><div class="metric-value" style="color:#facc15;">{tier_val}</div><div class="metric-label">{tier_lbl}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-value" style="color:#facc15;">{band_b_count + band_c_count + band_d_count}</div><div class="metric-label">Bands B / C / D</div></div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -563,7 +570,7 @@ def render_app():
                     if band:
                         score_str = f"Band {band} · {score}pts"
                     else:
-                        score_str = "Stage 1"
+                        score_str = "Score Pending"
                         
                     label = f"{status_tag} {name} ({score_str})"
                     lead_options[label] = l
@@ -595,9 +602,12 @@ def render_app():
                     elif lband == "C":
                         band_css = "badge-band-c"
                         band_txt = f"Band C · {lscore}"
+                    elif lband == "D":
+                        band_css = "badge-band-d"
+                        band_txt = f"Band D · {lscore}"
                     else:
-                        band_css = "badge-band-raw"
-                        band_txt = "Stage 1 Lead"
+                        band_css = "badge-band-c"
+                        band_txt = "Score Pending"
                         
                     status_css = "badge-status-approved" if ldec in ["approve", "edit"] else ("badge-status-rejected" if ldec == "reject" else "badge-status-pending")
                     status_txt = "APPROVED" if ldec in ["approve", "edit"] else ("REJECTED" if ldec == "reject" else "PENDING")
@@ -632,7 +642,19 @@ def render_app():
                 site_text = selected_lead.get("site_text", "")
                 current_decision = selected_lead.get("decision", "pending")
                 
-                url = f"https://{domain}" if domain and not domain.startswith("http") else domain
+                # Visual audit fields from Stage 2
+                website_url = selected_lead.get("website_url") or (f"https://{domain}" if domain and not domain.startswith("http") else domain)
+                load_time = selected_lead.get("load_time_seconds")
+                loads_5s = selected_lead.get("loads_under_5_seconds") if "loads_under_5_seconds" in selected_lead else selected_lead.get("loads_under_5s")
+                mobile_ok = (not selected_lead.get("horizontal_scroll_mobile")) if "horizontal_scroll_mobile" in selected_lead else selected_lead.get("mobile_friendly")
+                contact_ok = selected_lead.get("contact_form") if "contact_form" in selected_lead else selected_lead.get("has_contact_method")
+                meta_ok = selected_lead.get("meta_description_present") if "meta_description_present" in selected_lead else selected_lead.get("has_meta_description")
+                title_ok = selected_lead.get("title_present")
+                phone_vis = selected_lead.get("phone_visible")
+                audit_status = selected_lead.get("status")
+                audit_error = selected_lead.get("error")
+                desktop_img = selected_lead.get("desktop_screenshot") or selected_lead.get("screenshot_desktop") or ""
+                mobile_img = selected_lead.get("mobile_screenshot") or selected_lead.get("screenshot_mobile") or ""
                 
                 # Header Styling
                 if band == "A":
@@ -644,9 +666,12 @@ def render_app():
                 elif band == "C":
                     band_css = "badge-band-c"
                     band_txt = f"Band C · {score}/100"
+                elif band == "D":
+                    band_css = "badge-band-d"
+                    band_txt = f"Band D · {score}/100"
                 else:
-                    band_css = "badge-band-raw"
-                    band_txt = "Stage 1 (Raw OSM)"
+                    band_css = "badge-band-c"
+                    band_txt = "Score Pending"
                     
                 status_css = "badge-status-approved" if current_decision in ["approve", "edit"] else ("badge-status-rejected" if current_decision == "reject" else "badge-status-pending")
                 status_txt = "APPROVED" if current_decision in ["approve", "edit"] else ("REJECTED" if current_decision == "reject" else "PENDING REVIEW")
@@ -657,7 +682,7 @@ def render_app():
                         <div>
                             <h2 style="margin:0; font-size:1.6rem; color:#f8fafc; font-weight:800;">{name}</h2>
                             <div style="margin-top:0.4rem; font-size:0.9rem; color:#94a3b8;">
-                                <a href="{url}" target="_blank" style="color:#38bdf8; text-decoration:none; font-weight:600;">{domain}</a>
+                                <a href="{website_url}" target="_blank" style="color:#38bdf8; text-decoration:none; font-weight:600;">{domain or website_url}</a>
                                 &nbsp;·&nbsp; Location: {city} &nbsp;·&nbsp; Category: {category} &nbsp;·&nbsp; Phone: {phone or 'No phone listed'}
                             </div>
                         </div>
@@ -669,30 +694,42 @@ def render_app():
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Health checklist if Stage 2 is present
-                loads_5s = selected_lead.get("loads_under_5s")
-                mobile_ok = selected_lead.get("mobile_friendly")
-                contact_ok = selected_lead.get("has_contact_method")
-                meta_ok = selected_lead.get("has_meta_description")
-                visual_ok = selected_lead.get("visual_ok")
-                
-                if visual_ok is not None:
+                # Health checklist strip (if Stage 2 audit is present)
+                if audit_status is not None or loads_5s is not None:
+                    load_time_str = f"{load_time:.2f}s" if load_time is not None else ("<5s" if loads_5s else ">5s")
+                    
                     st.markdown(f"""
                     <div style="margin-bottom:1rem;">
-                        <span class="health-pill" style="color:{'#4ade80' if visual_ok else '#fb7185'};">Visual Audit: {'Pass' if visual_ok else 'Fail'}</span>
-                        <span class="health-pill" style="color:{'#4ade80' if loads_5s else '#facc15'};">Load Speed: {'< 5s' if loads_5s else '> 5s'}</span>
-                        <span class="health-pill" style="color:{'#4ade80' if mobile_ok else '#facc15'};">Mobile: {'Responsive' if mobile_ok else 'Unoptimized'}</span>
-                        <span class="health-pill" style="color:{'#4ade80' if contact_ok else '#facc15'};">Contact: {'Available' if contact_ok else 'None'}</span>
-                        <span class="health-pill" style="color:{'#4ade80' if meta_ok else '#facc15'};">Meta Description: {'Present' if meta_ok else 'Missing'}</span>
+                        <span class="health-pill" style="color:{'#4ade80' if audit_status == 'success' else ('#fb7185' if audit_status == 'error' else '#60a5fa')};">
+                            Status: {audit_status.upper() if audit_status else 'Audited'}
+                        </span>
+                        <span class="health-pill" style="color:{'#4ade80' if loads_5s else '#facc15'};">
+                            Load Time: {load_time_str}
+                        </span>
+                        <span class="health-pill" style="color:{'#4ade80' if mobile_ok else '#facc15'};">
+                            Mobile: {'Responsive' if mobile_ok else 'Horizontal Scroll'}
+                        </span>
+                        <span class="health-pill" style="color:{'#4ade80' if contact_ok else '#94a3b8'};">
+                            Form: {'Present' if contact_ok else 'No Form'}
+                        </span>
+                        <span class="health-pill" style="color:{'#4ade80' if phone_vis else '#94a3b8'};">
+                            Phone on Site: {'Visible' if phone_vis else 'Not Visible'}
+                        </span>
+                        <span class="health-pill" style="color:{'#4ade80' if title_ok else '#94a3b8'};">
+                            Title Tag: {'Present' if title_ok else 'Missing'}
+                        </span>
+                        <span class="health-pill" style="color:{'#4ade80' if meta_ok else '#94a3b8'};">
+                            Meta Description: {'Present' if meta_ok else 'Missing'}
+                        </span>
                     </div>
                     """, unsafe_allow_html=True)
+                    
+                    if audit_error:
+                        st.warning(f"Audit Note: {audit_error}")
                 
                 # --- SECTION: AUDIT SCREENSHOTS ---
                 st.markdown("#### Website Visual Audit")
                 sc_col1, sc_col2 = st.columns(2)
-                
-                desktop_img = selected_lead.get("screenshot_desktop", "")
-                mobile_img = selected_lead.get("screenshot_mobile", "")
                 
                 with sc_col1:
                     st.caption("Desktop Viewport")
@@ -703,7 +740,7 @@ def render_app():
                         <div class="screenshot-fallback">
                             <div style="font-size: 0.85rem; font-weight:700; color:#94a3b8; margin-bottom:0.3rem;">DESKTOP VIEWPORT</div>
                             <strong>Screenshot Pending</strong>
-                            <div style="margin-top:0.25rem; font-size:0.75rem; color:#64748b;">Target: <code>{desktop_img or f'screenshots/{lid}_d.png'}</code></div>
+                            <div style="margin-top:0.25rem; font-size:0.75rem; color:#64748b;">Target: <code>{desktop_img or f'screenshots/{lid}_desktop.png'}</code></div>
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -716,19 +753,19 @@ def render_app():
                         <div class="screenshot-fallback">
                             <div style="font-size: 0.85rem; font-weight:700; color:#94a3b8; margin-bottom:0.3rem;">MOBILE VIEWPORT</div>
                             <strong>Screenshot Pending</strong>
-                            <div style="margin-top:0.25rem; font-size:0.75rem; color:#64748b;">Target: <code>{mobile_img or f'screenshots/{lid}_m.png'}</code></div>
+                            <div style="margin-top:0.25rem; font-size:0.75rem; color:#64748b;">Target: <code>{mobile_img or f'screenshots/{lid}_mobile.png'}</code></div>
                         </div>
                         """, unsafe_allow_html=True)
                 
                 if reasons:
-                    st.markdown("<br><strong>Key Opportunity Drivers:</strong>", unsafe_allow_html=True)
+                    st.markdown("<br><strong>Score Reasons:</strong>", unsafe_allow_html=True)
                     for r in reasons:
                         st.markdown(f"- {r}")
                         
-                # Extracted website text if available
-                if site_text and not findings:
-                    with st.expander("View Extracted Website Text (Stage 1)", expanded=False):
-                        st.text_area("Site Content", value=site_text, height=180, disabled=True)
+                # Extracted website text (Stage 1) - always available when in JSON
+                if site_text:
+                    with st.expander(f"Extracted Website Text ({len(site_text)} characters)", expanded=False):
+                        st.text_area("Site Content (Stage 1 Trafilatura Extraction)", value=site_text, height=200, disabled=True)
                         
                 st.markdown("---")
                 
@@ -745,13 +782,15 @@ def render_app():
                         v_badge = "VERIFIED QUOTE" if verified else "UNVERIFIED"
                         v_color = "#34d399" if verified else "#facc15"
                         
+                        quote_html = f'<div class="finding-quote">"{quote}"</div>' if quote else '<div style="font-size:0.78rem; color:#64748b; margin-top:0.25rem; font-style:italic;">Observation from website analysis</div>'
+                        
                         st.markdown(f"""
                         <div class="finding-box">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span class="finding-claim">{claim}</span>
                                 <span style="font-size:0.75rem; font-weight:700; color:{v_color};">{v_badge} · {cat}</span>
                             </div>
-                            <div class="finding-quote">"{quote}"</div>
+                            {quote_html}
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -760,24 +799,17 @@ def render_app():
                 # --- SECTION: OUTREACH WORKBENCH ---
                 st.markdown("#### Outreach Email Workbench")
                 
-                # Defaults
-                if not selected_lead.get("subject") and not selected_lead.get("final_subject"):
-                    default_subj = f"Quick question regarding online reservations for {name}"
-                else:
-                    default_subj = selected_lead.get("final_subject") or selected_lead.get("subject")
-                    
-                if not selected_lead.get("body") and not selected_lead.get("final_body"):
-                    default_body = f"Hi {name} team,\n\nI was looking through your website ({domain}) and noticed you have a great offering in {city}.\n\nI wanted to share a quick suggestion that could help improve customer inquiries.\n\nBest regards,\nLeadForge Outreach Team"
-                else:
-                    default_body = selected_lead.get("final_body") or selected_lead.get("body")
+                # Outreach email fields strictly from JSON (Stage 5 - Amna Miraj)
+                default_subj = selected_lead.get("final_subject") or selected_lead.get("subject") or ""
+                default_body = selected_lead.get("final_body") or selected_lead.get("body") or ""
                 
                 with st.form(key=f"review_form_{lid}"):
-                    edit_subject = st.text_input("Email Subject Line", value=default_subj)
-                    edit_body = st.text_area("Email Body (Markdown / Plaintext)", value=default_body, height=220)
+                    edit_subject = st.text_input("Email Subject Line", value=default_subj, placeholder="No subject drafted yet (Stage 5)...")
+                    edit_body = st.text_area("Email Body (Markdown / Plaintext)", value=default_body, height=220, placeholder="No email body drafted yet (Stage 5)...")
                     
-                    words = len(edit_body.split())
+                    words = len(edit_body.split()) if edit_body else 0
                     chars = len(edit_body)
-                    st.caption(f"Length: **{words} words** · **{chars} characters** · Estimated read time: ~{max(1, words // 200)} min")
+                    st.caption(f"Length: **{words} words** · **{chars} characters** · Estimated read time: ~{max(1, words // 200) if words else 0} min")
                     
                     btn_col1, btn_col2, btn_col3, btn_col4 = st.columns(4)
                     
