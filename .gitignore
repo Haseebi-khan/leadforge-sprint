@@ -22,7 +22,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Pipeline runtime data
-data/sample_10.jsonl
+# Pipeline output data
 data/06_approved.jsonl
 screenshots/

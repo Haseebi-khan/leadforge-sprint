@@ -5,81 +5,94 @@ import json
 import tempfile
 from app import load_jsonl, save_decision, load_decisions, remove_decision
 
-def test_sample_10_schema():
-    sample_path = os.path.join("data", "sample_10.jsonl")
-    assert os.path.exists(sample_path), "sample_10.jsonl does not exist"
+def test_real_pipeline_schema():
+    # Test real pipeline data files
+    real_paths = [
+        os.path.join("data", "04_scored.jsonl"),
+        os.path.join("data", "03_research.jsonl"),
+        os.path.join("data", "02_visual.jsonl"),
+        os.path.join("data", "01_leads.jsonl")
+    ]
     
-    records = load_jsonl(sample_path)
-    assert len(records) == 10, f"Expected 10 sample records, got {len(records)}"
-    
-    required_fields = ["lead_id", "name", "domain", "city", "category", "score", "band", "findings", "subject", "body"]
-    for r in records:
-        for field in required_fields:
-            assert field in r, f"Field '{field}' missing in record {r.get('lead_id')}"
-        assert r["band"] in ["A", "B", "C"], f"Invalid band {r['band']}"
-        assert 0 <= r["score"] <= 100, f"Score out of range {r['score']}"
-        assert isinstance(r["findings"], list), "findings must be a list"
-    print("[PASS] test_sample_10_schema passed: all 10 records adhere to lead schema contract.")
+    found_any = False
+    for p in real_paths:
+        if os.path.exists(p):
+            found_any = True
+            records = load_jsonl(p)
+            assert len(records) > 0, f"Empty records in {p}"
+            for r in records:
+                assert "lead_id" in r, f"Missing lead_id in {p}"
+                assert "name" in r, f"Missing name in {p}"
+                assert "domain" in r, f"Missing domain in {p}"
+                assert "city" in r, f"Missing city in {p}"
+                assert "category" in r, f"Missing category in {p}"
+                assert "site_text" in r, f"Missing site_text in {p}"
+            print(f"[PASS] {p} verified ({len(records)} real records adhere to schema).")
+            
+    assert found_any, "No real data files found in data/"
+
 
 def test_decision_lifecycle():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        test_approved_file = os.path.join(tmpdir, "06_approved.jsonl")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_approved = os.path.join(tmp_dir, "06_approved.jsonl")
         
-        sample_lead = {
-            "lead_id": "test_001",
-            "name": "Test Dental Clinic",
-            "domain": "testdental.com",
-            "city": "London",
-            "category": "dentist",
-            "score": 90,
-            "band": "A",
-            "subject": "Original Subject",
-            "body": "Original Body",
-            "custom_field_from_stage_x": "keep_this_safe"
-        }
+        # Load a real lead from 04_scored.jsonl if present, else 01_leads.jsonl
+        test_source = os.path.join("data", "04_scored.jsonl")
+        if not os.path.exists(test_source):
+            test_source = os.path.join("data", "01_leads.jsonl")
+            
+        real_leads = load_jsonl(test_source)
+        assert len(real_leads) > 0, "No leads to test with"
+        real_lead = real_leads[0]
+        lid = real_lead["lead_id"]
         
-        # 1. Test Approve
-        updated = save_decision(
-            lead_record=sample_lead,
+        # 1. Save approval decision
+        saved = save_decision(
+            lead_record=real_lead,
             decision="approve",
-            final_subject="Approved Subject",
-            final_body="Approved Body",
+            final_subject="Customized test subject line",
+            final_body="Customized test body text",
             reviewer="Umer Mujahid",
-            approved_file=test_approved_file
+            approved_file=tmp_approved
         )
         
-        assert updated["decision"] == "approve"
-        assert updated["final_body"] == "Approved Body"
-        assert updated["custom_field_from_stage_x"] == "keep_this_safe"
-        assert "decided_at" in updated
-        assert updated["decided_by"] == "Umer Mujahid"
+        assert saved["decision"] == "approve"
+        assert saved["final_subject"] == "Customized test subject line"
+        assert "decided_at" in saved
+        assert saved["decided_by"] == "Umer Mujahid"
         
-        # 2. Test Load Decisions
-        decisions = load_decisions(test_approved_file)
-        assert "test_001" in decisions
-        assert decisions["test_001"]["decision"] == "approve"
+        # Verify all original fields are strictly preserved
+        for k, v in real_lead.items():
+            assert saved[k] == v, f"Field {k} altered in approval record"
+            
+        # 2. Reload decisions
+        decisions_map = load_decisions(tmp_approved)
+        assert lid in decisions_map
+        assert decisions_map[lid]["decision"] == "approve"
         
-        # 3. Test Edit & Update In Place
-        save_decision(
-            lead_record=sample_lead,
-            decision="approve",
-            final_subject="Edited Subject",
-            final_body="Edited Body",
+        # 3. Update existing decision in-place
+        saved_updated = save_decision(
+            lead_record=real_lead,
+            decision="reject",
+            final_subject="Customized test subject line",
+            final_body="Customized test body text",
             reviewer="Umer Mujahid",
-            approved_file=test_approved_file
+            approved_file=tmp_approved
         )
-        decisions = load_decisions(test_approved_file)
-        assert len(decisions) == 1, "Expected single record after update, not duplicated"
-        assert decisions["test_001"]["final_subject"] == "Edited Subject"
+        decisions_map2 = load_decisions(tmp_approved)
+        assert len(decisions_map2) == 1, "Duplicate record created instead of update"
+        assert decisions_map2[lid]["decision"] == "reject"
         
-        # 4. Test Revert
-        remove_decision("test_001", test_approved_file)
-        decisions = load_decisions(test_approved_file)
-        assert "test_001" not in decisions
+        # 4. Revert decision
+        remove_decision(lid, tmp_approved)
+        decisions_map3 = load_decisions(tmp_approved)
+        assert lid not in decisions_map3
+        assert len(decisions_map3) == 0
         
-    print("[PASS] test_decision_lifecycle passed: save, reload, in-place update, and revert verified.")
+        print("[PASS] test_decision_lifecycle passed: real lead save, reload, in-place update, and revert verified.")
+
 
 if __name__ == "__main__":
-    test_sample_10_schema()
+    test_real_pipeline_schema()
     test_decision_lifecycle()
-    print("ALL TESTS PASSED SUCCESSFULLY!")
+    print("ALL REAL PIPELINE TESTS PASSED SUCCESSFULLY!")

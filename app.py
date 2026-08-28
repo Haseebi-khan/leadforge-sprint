@@ -65,7 +65,7 @@ PIPELINE_STAGES = [
 # ==============================================================================
 
 def find_available_datasets():
-    """Discover all JSONL data files currently present in workspace."""
+    """Discover all real JSONL pipeline data files present in workspace."""
     found = []
     
     # Priority order: latest stages first
@@ -76,16 +76,15 @@ def find_available_datasets():
         os.path.join("data", "02_visual.jsonl"),
         os.path.join("data", "01_leads.jsonl"),
         os.path.join("data", "06_approved.jsonl"),
-        os.path.join("data", "sample_10.jsonl"),
     ]
     
     for p in priority_paths:
         if os.path.exists(p) and p not in found:
             found.append(p)
             
-    # Check for any other jsonl files inside data/
+    # Check for any other stage jsonl files inside data/
     if os.path.exists("data"):
-        for f in os.listdir("data"):
+        for f in sorted(os.listdir("data")):
             full_p = os.path.join("data", f)
             if f.endswith(".jsonl") and full_p not in found:
                 found.append(full_p)
@@ -344,8 +343,8 @@ def render_app():
 
     available_datasets = find_available_datasets()
     if not available_datasets:
-        sample_path = os.path.join("data", "sample_10.jsonl")
-        available_datasets = [sample_path] if os.path.exists(sample_path) else ["data/sample_10.jsonl"]
+        st.sidebar.warning("No stage files found in data/. Run pipeline stages (01_collect.py, 02_visual.py, 04_score.py) to generate data.")
+        st.stop()
 
     # Format clean labels for datasets
     dataset_labels = {}
@@ -363,13 +362,11 @@ def render_app():
             label = f"Stage 5: Drafted Emails ({count} rows)"
         elif "06_approved.jsonl" in p:
             label = f"Stage 6: Approved Outbox ({count} rows)"
-        elif "sample_10.jsonl" in p:
-            label = f"Sample 10 Dataset ({count} rows)"
         else:
             label = f"{os.path.basename(p)} ({count} rows)"
         dataset_labels[label] = p
 
-    # Default to Stage 4 (scored real leads) or Stage 5 if available, else Sample 10
+    # Default to Stage 4 (scored real leads) or Stage 5 if available, else first available
     default_idx = 0
     labels_list = list(dataset_labels.keys())
     for idx, lbl in enumerate(labels_list):
@@ -379,14 +376,12 @@ def render_app():
         elif "Stage 5" in lbl:
             default_idx = idx
             break
-        elif "Sample 10" in lbl and default_idx == 0:
-            default_idx = idx
 
     selected_dataset_label = st.sidebar.selectbox(
         "Active Dataset",
         options=labels_list,
         index=default_idx,
-        help="Choose upstream stage data to review in the dashboard."
+        help="Choose real upstream stage data to review in the dashboard."
     )
     selected_dataset_path = dataset_labels[selected_dataset_label]
 
@@ -505,7 +500,7 @@ def render_app():
     <div class="leadforge-header">
         <div>
             <div class="leadforge-title">LEADFORGE <span style="color:#6366f1; font-weight:400;">| Review Screen</span></div>
-            <div class="leadforge-subtitle">Stage 6 Human-in-the-Loop Review Dashboard — Inspect findings, audit website visuals, refine personalized email outreach, and deliver to Mailtrap sandbox.</div>
+            <div class="leadforge-subtitle">Stage 6 Human-in-the-Loop Review Dashboard — Inspect real business findings, audit website health, refine outreach emails, and approve for sandbox delivery.</div>
         </div>
         <div>
             <span style="background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.4); padding: 0.4rem 0.85rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; color: #a5b4fc;">
@@ -808,16 +803,14 @@ def render_app():
                 # --- SECTION: OUTREACH WORKBENCH ---
                 st.markdown("#### Outreach Email Workbench")
                 
-                # Defaults
-                if not selected_lead.get("subject") and not selected_lead.get("final_subject"):
-                    default_subj = f"Quick question regarding online reservations for {name}"
-                else:
-                    default_subj = selected_lead.get("final_subject") or selected_lead.get("subject")
-                    
-                if not selected_lead.get("body") and not selected_lead.get("final_body"):
-                    default_body = f"Hi {name} team,\n\nI was looking through your website ({domain}) and noticed you have a great offering in {city}.\n\nI wanted to share a quick suggestion that could help improve customer inquiries.\n\nBest regards,\nLeadForge Outreach Team"
-                else:
+                # Dynamic personalization based on real lead data
+                default_subj = selected_lead.get("final_subject") or selected_lead.get("subject") or f"Quick suggestion regarding {name}'s online presence"
+                
+                if selected_lead.get("final_body") or selected_lead.get("body"):
                     default_body = selected_lead.get("final_body") or selected_lead.get("body")
+                else:
+                    top_driver = reasons[0] if reasons else f"improving {domain} customer conversion"
+                    default_body = f"Hi {name} team,\n\nI was reviewing your website ({domain}) in {city} and noted opportunities regarding {top_driver}.\n\nWould you be open to a quick overview of how other {category} businesses in London handle this?\n\nBest regards,\nLeadForge Outreach Team"
                 
                 with st.form(key=f"review_form_{lid}"):
                     edit_subject = st.text_input("Email Subject Line", value=default_subj)
