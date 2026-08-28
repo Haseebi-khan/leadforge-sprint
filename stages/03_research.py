@@ -230,7 +230,9 @@ def main():
     ap = argparse.ArgumentParser(description="Stage 3 - Research: extract & verify findings | Haseeb Khan")
     ap.add_argument("--input", default="data/02_visual.jsonl", help="Input JSONL from Stage 2 (Ishmal)")
     ap.add_argument("--output", default="data/03_research.jsonl", help="Output JSONL for Stage 4 (Azlan)")
-    # use --limit=N or --limit N but the defualt is three for now       (comment for umair) 
+    
+    # use --limit=N or --limit N but the defualt is three for now       (comment for umer) 
+    
     ap.add_argument("--limit", type=int, default=None, help="Only process the first N (which is 3) leads (for testing)")
     args = ap.parse_args()
 
