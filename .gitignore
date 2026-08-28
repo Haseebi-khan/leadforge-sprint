@@ -23,6 +23,6 @@ __pycache__/
 Thumbs.db
 
 # Pipeline runtime data
-data/sample_10.jsonl
 data/06_approved.jsonl
+data/03_research.jsonl
 screenshots/
