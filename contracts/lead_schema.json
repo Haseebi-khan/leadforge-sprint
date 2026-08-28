@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://leadforge-sprint/contracts/lead_schema.json",
+  "title": "LeadForge Sprint Pipeline Record",
+  "description": "One JSON object per line (JSONL). Each stage reads the record the previous stage wrote, copies every field through untouched, and adds only its own new fields. Never drop a field you don't use.",
+  "type": "object",
+  "required": ["lead_id", "name", "domain", "city", "category", "phone", "site_text"],
+  "properties": {
+    "lead_id": { "type": "string", "description": "Stage 1 (Nurul). Stable unique id, e.g. sd_0042." },
+    "name": { "type": "string", "description": "Stage 1. Business name." },
+    "domain": { "type": "string", "description": "Stage 1. Bare domain, no scheme. Used for dedupe." },
+    "city": { "type": "string", "description": "Stage 1." },
+    "category": { "type": "string", "description": "Stage 1. Overpass business category tag." },
+    "phone": { "type": "string", "description": "Stage 1." },
+    "site_text": { "type": "string", "maxLength": 4000, "description": "Stage 1. Trafilatura-extracted text, homepage + About/Services, capped at 4000 chars." },
+
+    "website_url": { "type": ["string", "null"], "description": "Stage 2 (Intern 5). Normalized URL that was actually fetched." },
+    "phone_visible": { "type": "boolean", "description": "Stage 2. Visible phone number found in the page body text." },
+    "contact_form": { "type": "boolean", "description": "Stage 2. A visible <form> containing input/textarea/select fields." },
+    "load_time_seconds": { "type": ["number", "null"], "description": "Stage 2. Desktop page load time, null if the page never loaded." },
+    "loads_under_5_seconds": { "type": "boolean", "description": "Stage 2." },
+    "horizontal_scroll_mobile": { "type": "boolean", "description": "Stage 2. True means the mobile view needs horizontal scroll, i.e. NOT mobile friendly." },
+    "title_present": { "type": "boolean", "description": "Stage 2. Page has a non-empty <title>." },
+    "meta_description_present": { "type": "boolean", "description": "Stage 2." },
+    "desktop_screenshot": { "type": ["string", "null"], "description": "Stage 2. Path, screenshots/{lead_id}_desktop.png. Null on failure." },
+    "mobile_screenshot": { "type": ["string", "null"], "description": "Stage 2. Path, screenshots/{lead_id}_mobile.png. Null on failure." },
+    "status": { "type": "string", "enum": ["success", "error"], "description": "Stage 2. Whether the desktop fetch succeeded." },
+    "error": { "type": ["string", "null"], "description": "Stage 2. Error message if status is 'error', else null." },
+
+    "findings": {
+      "type": "array",
+      "description": "Stage 3 (Haseeb). Exactly 3 items per lead, one LLM call per lead.",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["claim", "quote", "category", "quote_verified"],
+        "properties": {
+          "claim": { "type": "string", "description": "One specific, concrete observation about the business's site." },
+          "quote": { "type": "string", "description": "Verbatim substring of site_text supporting the claim." },
+          "category": { "type": "string", "enum": ["design", "content", "conversion", "trust"] },
+          "quote_verified": { "type": "boolean", "description": "True only if `quote` is confirmed to literally appear in site_text." }
+        }
+      }
+    },
+
+    "score": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Stage 4 (Azlan)." },
+    "band": { "type": "string", "enum": ["A", "B", "C", "D"], "description": "Stage 4. A>=75, B 50-74, C 25-49, D<25." },
+    "score_reasons": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 3, "description": "Stage 4. Top signals that drove the score." },
+
+    "subject": { "type": "string", "description": "Stage 5 (Amna). Only present for band A/B." },
+    "body": { "type": "string", "description": "Stage 5. Under 120 words, references >=2 findings by specific content." },
+    "claims_referenced": { "type": "integer", "description": "Stage 5. Count of findings recognisably present in body." },
+
+    "decision": { "type": "string", "enum": ["approve", "edit", "reject", "pending"], "description": "Dashboard (Umer)." },
+    "final_body": { "type": "string", "description": "Dashboard. Final text after human edit, if any." },
+    "decided_at": { "type": "string", "format": "date-time", "description": "Dashboard. ISO 8601 UTC timestamp of the decision." }
+  }
+}
