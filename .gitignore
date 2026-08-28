@@ -24,4 +24,5 @@ Thumbs.db
 
 # Pipeline output data
 data/06_approved.jsonl
+data/03_research.jsonl
 screenshots/
