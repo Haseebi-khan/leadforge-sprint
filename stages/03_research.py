@@ -120,7 +120,7 @@ def _strip_code_fence(text: str) -> str:
 
 
 def call_gemini(user_prompt: str) -> dict:
-    import google.genai as genai
+    import google.generativeai as genai
 
     api_key = os.environ["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
