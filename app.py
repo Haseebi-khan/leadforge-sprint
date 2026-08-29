@@ -762,10 +762,10 @@ def render_app():
                     for r in reasons:
                         st.markdown(f"- {r}")
                         
-                # Extracted website text (Stage 1) - always available when in JSON
+                # Extracted website text - always available when in JSON
                 if site_text:
                     with st.expander(f"Extracted Website Text ({len(site_text)} characters)", expanded=False):
-                        st.text_area("Site Content (Stage 1 Trafilatura Extraction)", value=site_text, height=200, disabled=True)
+                        st.text_area("Site Content", value=site_text, height=200, disabled=True)
                         
                 st.markdown("---")
                 
