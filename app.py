@@ -497,11 +497,6 @@ def render_app():
             <div class="leadforge-title">LEADFORGE <span style="color:#6366f1; font-weight:400;">| Review Screen</span></div>
             <div class="leadforge-subtitle">Stage 6 Human-in-the-Loop Review Dashboard — Inspect real business findings, audit website health, refine outreach emails, and approve for sandbox delivery.</div>
         </div>
-        <div>
-            <span style="background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.4); padding: 0.4rem 0.85rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; color: #a5b4fc;">
-                Sprint 2026 · Stage 6
-            </span>
-        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -762,10 +757,10 @@ def render_app():
                     for r in reasons:
                         st.markdown(f"- {r}")
                         
-                # Extracted website text (Stage 1) - always available when in JSON
+                # Extracted website text - always available when in JSON
                 if site_text:
                     with st.expander(f"Extracted Website Text ({len(site_text)} characters)", expanded=False):
-                        st.text_area("Site Content (Stage 1 Trafilatura Extraction)", value=site_text, height=200, disabled=True)
+                        st.text_area("Site Content", value=site_text, height=200, disabled=True)
                         
                 st.markdown("---")
                 
