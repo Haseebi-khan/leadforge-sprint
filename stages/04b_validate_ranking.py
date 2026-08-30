@@ -3,10 +3,10 @@ LEADFORGE SPRINT — Stage 4 validation, step 2
 Compares your scorecard's ranking of the 20 sample leads against 3
 teammates' independent human rankings, using Spearman correlation.
 
-Expects a CSV with columns:
-    lead_id, ... , human_rank_teammate1, human_rank_teammate2, human_rank_teammate3
-(collect the 3 filled-in ranking sheets and merge their rank columns into one
-file with these column names before running this.)
+Expects a CSV with a lead_id column plus 3 columns whose names match the
+pattern human<N>_rank_1_to_20 (e.g. human1_rank_1_to_20, human2_rank_1_to_20,
+human3_rank_1_to_20) — this matches what you get when you merge 3 filled-in
+copies of the ranking sheet into one file.
 
 Run:
     python stages/04b_validate_ranking.py --scored data/04_scored.jsonl --ranks data/human_ranks.csv
@@ -14,16 +14,20 @@ Run:
 import argparse
 import csv
 import json
+import re
 from pathlib import Path
 
 from scipy.stats import spearmanr
+
+# Matches human1_rank_1_to_20, human2_rank_1_to_20, human_rank_teammate1, etc.
+RANK_COLUMN_PATTERN = re.compile(r"^human.*rank", re.IGNORECASE)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--scored", default="data/04_scored.jsonl")
     parser.add_argument("--ranks", default="data/human_ranks.csv",
-                         help="CSV with lead_id + human_rank_teammate1/2/3 columns")
+                         help="CSV with lead_id + human rank columns (e.g. human1_rank_1_to_20)")
     args = parser.parse_args()
 
     scores_by_id = {}
@@ -35,16 +39,24 @@ def main():
 
     lead_ids, our_scores, avg_human_ranks = [], [], []
     with open(args.ranks, encoding="utf-8") as f:
-        for row in csv.DictReader(f):
+        reader = csv.DictReader(f)
+        rank_cols = [c for c in reader.fieldnames if c and RANK_COLUMN_PATTERN.match(c)]
+        if not rank_cols:
+            print(f"ERROR: no columns matching 'human*rank*' found. "
+                  f"Columns present: {reader.fieldnames}")
+            return
+        print(f"Using rank columns: {rank_cols}")
+
+        for row in reader:
             lid = row["lead_id"]
             if lid not in scores_by_id:
                 continue
             teammate_ranks = [
-                float(row[c]) for c in row
-                if c.startswith("human_rank_teammate") and row[c].strip()
+                float(row[c]) for c in rank_cols
+                if row.get(c) and row[c].strip()
             ]
-            if len(teammate_ranks) < 3:
-                print(f"WARNING: {lid} has only {len(teammate_ranks)}/3 rankings filled in — skipping")
+            if len(teammate_ranks) < len(rank_cols):
+                print(f"WARNING: {lid} has only {len(teammate_ranks)}/{len(rank_cols)} rankings filled in — skipping")
                 continue
             lead_ids.append(lid)
             our_scores.append(scores_by_id[lid])

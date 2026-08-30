@@ -14,6 +14,11 @@ import json
 import random
 from pathlib import Path
 
+# Leads known to have bad/spam site_text from Stage 1 scraping — exclude
+# from the ranking sheet so they don't confuse human rankers or pollute
+# the correlation. Add to this list as more are found.
+KNOWN_BAD_LEADS = {"sd_0014"}
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -27,26 +32,33 @@ def main():
     with open(args.input, encoding="utf-8") as f:
         for line in f:
             if line.strip():
-                leads.append(json.loads(line))
+                lead = json.loads(line)
+                if lead.get("lead_id") not in KNOWN_BAD_LEADS:
+                    leads.append(lead)
 
     random.seed(args.seed)
     sample = random.sample(leads, min(args.n, len(leads)))
 
     with open(args.output, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        # Deliberately do NOT include score/band — teammates must rank blind
-        writer.writerow(["lead_id", "name", "domain", "has_contact_method",
-                          "mobile_friendly", "loads_under_5s", "num_findings",
-                          "human_rank_1_to_20"])
+        # Deliberately do NOT include score/band — teammates must rank blind.
+        # Column names match the REAL Stage 2 (data/02_visual.jsonl) fields.
+        writer.writerow(["lead_id", "name", "domain", "phone_visible",
+                          "contact_form", "horizontal_scroll_mobile",
+                          "loads_under_5_seconds", "meta_description_present",
+                          "site_status", "human_rank_1_to_20"])
         for lead in sample:
             writer.writerow([
                 lead.get("lead_id"), lead.get("name"), lead.get("domain"),
-                lead.get("has_contact_method"), lead.get("mobile_friendly"),
-                lead.get("loads_under_5s"), len(lead.get("findings", []) or []),
+                lead.get("phone_visible"), lead.get("contact_form"),
+                lead.get("horizontal_scroll_mobile"),
+                lead.get("loads_under_5_seconds"),
+                lead.get("meta_description_present"),
+                lead.get("status"),
                 "",  # blank for teammate to fill in
             ])
 
-    print(f"Wrote {len(sample)} leads to {args.output}")
+    print(f"Wrote {len(sample)} leads to {args.output} (excluded {len(KNOWN_BAD_LEADS)} known-bad leads)")
     print("Send this to 3 teammates, each fills their own copy of the "
           "human_rank_1_to_20 column (1 = best lead to contact, 20 = worst).")
 

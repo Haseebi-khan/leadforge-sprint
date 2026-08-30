@@ -1,0 +1,21 @@
+lead_id,name,domain,phone_visible,contact_form,horizontal_scroll_mobile,loads_under_5_seconds,meta_description_present,site_status,human1_rank_1_to_20,human2_rank_1_to_20,human3_rank_1_to_20
+sd_0083,Vivat Bacchus,vivatbacchus.co.uk,TRUE,TRUE,FALSE,FALSE,TRUE,success,3,3,5
+sd_0016,Las Iguanas,iguanas.co.uk,FALSE,FALSE,FALSE,TRUE,FALSE,success,17,16,18
+sd_0004,Jin Li,jinli.co.uk,FALSE,FALSE,FALSE,TRUE,FALSE,success,12,14,18
+sd_0096,8 Hoxton Square,8hoxtonsquare.com,FALSE,FALSE,FALSE,FALSE,FALSE,error,20,18,20
+sd_0037,Caffè Concerto,caffeconcerto.co.uk,FALSE,FALSE,FALSE,FALSE,TRUE,success,15,13,18
+sd_0033,Aubaine,aubaine.co.uk,FALSE,TRUE,FALSE,FALSE,TRUE,success,6,4,12
+sd_0030,Ta Ke,take-sushi.co.uk,FALSE,FALSE,FALSE,FALSE,FALSE,success,16,15,18
+sd_0019,Cappadocia Restaurant Epsom,cappadociaepsom.co.uk,TRUE,FALSE,TRUE,TRUE,TRUE,success,4,5,12
+sd_0015,Whitewebbs House,tobycarvery.co.uk,FALSE,FALSE,FALSE,TRUE,FALSE,success,11,7,18
+sd_0088,Tbilisi,tbilisi-restaurant.co.uk,FALSE,FALSE,FALSE,FALSE,FALSE,error,18,20,20
+sd_0071,Le Sacré Coeur,lesacrecoeurbistro.co.uk,TRUE,FALSE,FALSE,FALSE,FALSE,success,7,6,10
+sd_0012,Spaghetti House,spaghettihouse.co.uk,FALSE,FALSE,FALSE,TRUE,TRUE,success,9,8,15
+sd_0077,Gem,gemrestaurant.org.uk,TRUE,TRUE,FALSE,TRUE,TRUE,success,1,2,3
+sd_0056,Gỗ,vietnamfood.co.uk,FALSE,FALSE,FALSE,TRUE,FALSE,success,13,11,17
+sd_0005,The Meeting Bar and Restaurant,themeetingenfield.com,TRUE,FALSE,TRUE,TRUE,TRUE,success,5,5,2
+sd_0029,River View Restaurant,riverview-restaurant.com,FALSE,FALSE,FALSE,FALSE,FALSE,error,19,19,20
+sd_0031,Lemonia,lemonia.co.uk,TRUE,FALSE,FALSE,FALSE,FALSE,success,8,10,10
+sd_0066,La Poule au Pot,pouleaupot.co.uk,FALSE,FALSE,FALSE,TRUE,TRUE,success,10,9,13
+sd_0079,Schnitzel Heaven,schnitzelheaven.co.uk,TRUE,TRUE,FALSE,TRUE,TRUE,success,2,1,3
+sd_0073,Mem & Laz,memlaz.co.uk,FALSE,FALSE,FALSE,TRUE,FALSE,success,14,12,15

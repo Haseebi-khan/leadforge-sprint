@@ -29,14 +29,20 @@ from pathlib import Path
 # (e.g. "real_estate_agency"). Leave as None to disable the category bonus.
 TARGET_CATEGORY = "restaurant"
 
+# Site fully failed to load — this is the strongest possible signal, worth
+# more than any single check below. Comes from Stage 2's `status` field.
+SITE_DOWN_POINTS = 15
+
 # Each failed visual/technical check is a sales hook — a site with more
 # broken things is a BETTER lead for an agency that fixes websites, so
 # failures ADD to the score rather than subtract from it.
+# NOTE: these are the REAL Stage 2 (data/02_visual.jsonl) field names,
+# confirmed against an actual sample entry on 2026-08-28.
 CHECK_WEIGHTS = {
-    "has_contact_method": ("no contact method on site", 12),   # bool: False = failed
-    "mobile_friendly":    ("not mobile friendly", 10),          # bool: False = failed
-    "loads_under_5s":     ("slow page load (5s+)", 10),         # bool: False = failed
-    "has_meta_description": ("missing meta description", 8),   # bool: False = failed
+    "no_contact_method":  ("no visible phone or contact form", 12),
+    "not_mobile_friendly": ("mobile horizontal-scroll issue", 10),
+    "slow_load":          ("slow page load (5s+)", 10),
+    "no_meta_description": ("missing meta description", 8),
 }
 MAX_CHECK_SCORE = sum(w for _, w in CHECK_WEIGHTS.values())  # 40
 
@@ -54,11 +60,31 @@ def score_lead(lead: dict) -> dict:
     """Return {score, band, score_reasons} for one lead record."""
     contributions = []  # list of (label, points)
 
+    # --- Signal 0: site failed to load entirely (Stage 2 `status`) --------
+    # Strongest possible signal — worse than any individual check failing.
+    if lead.get("status") == "error":
+        contributions.append((f"site failed to load ({lead.get('error', 'unknown error')})", SITE_DOWN_POINTS))
+
     # --- Signal 1: failed visual/technical checks (up to 40 pts) ----------
+    # Derive our booleans from Stage 2's real field names.
+    derived_checks = {
+        "no_contact_method": not (lead.get("phone_visible") or lead.get("contact_form")),
+        "not_mobile_friendly": bool(lead.get("horizontal_scroll_mobile")),  # True = broken
+        "slow_load": lead.get("loads_under_5_seconds") is False,
+        "no_meta_description": lead.get("meta_description_present") is False,
+    }
     for field, (label, weight) in CHECK_WEIGHTS.items():
-        # Missing field is treated as "unknown / not checked" -> no points,
-        # so a lead never gets penalized just because Stage 2 didn't run.
-        if field in lead and lead[field] is False:
+        # Only score a check if the underlying Stage 2 data is actually present,
+        # so a lead never gets penalized just because Stage 2 didn't run on it.
+        if field == "no_contact_method" and ("phone_visible" not in lead and "contact_form" not in lead):
+            continue
+        if field == "not_mobile_friendly" and "horizontal_scroll_mobile" not in lead:
+            continue
+        if field == "slow_load" and "loads_under_5_seconds" not in lead:
+            continue
+        if field == "no_meta_description" and "meta_description_present" not in lead:
+            continue
+        if derived_checks[field]:
             contributions.append((label, weight))
 
     # --- Signal 2: verified conversion-related findings (up to 25 pts) ----
