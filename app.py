@@ -1,6 +1,7 @@
 import os
 import json
 import csv
+import textwrap
 from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
@@ -400,8 +401,8 @@ def render_app():
         initial_sidebar_state="expanded"
     )
 
-    # Clean, professional styling without emoji decorations
-    st.markdown("""
+    # Clean, professional styling
+    st.markdown(textwrap.dedent("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
         
@@ -475,28 +476,6 @@ def render_app():
             margin-top: 0.25rem;
         }
         
-        /* Badge System */
-        .badge {
-            display: inline-block;
-            padding: 0.22rem 0.65rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-        }
-        .badge-band-a { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.35); }
-        .badge-band-b { background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.35); }
-        .badge-band-c { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35); }
-        .badge-band-d { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.35); }
-        .badge-band-raw { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); }
-        
-        .badge-status-approved { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
-        .badge-status-rejected { background: rgba(244, 63, 94, 0.2); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); }
-        .badge-status-pending { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
-        
-        .badge-validated { background: rgba(139, 92, 246, 0.2); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.4); }
-        
         /* Findings Box */
         .finding-box {
             background: rgba(30, 41, 59, 0.85);
@@ -566,7 +545,7 @@ def render_app():
             margin-bottom: 1rem;
         }
     </style>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
     # ==============================================================================
     # SIDEBAR CONTROLS
@@ -751,14 +730,14 @@ def render_app():
     # HEADER BANNER & KPI METRICS
     # ==============================================================================
 
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <div class="leadforge-header">
         <div>
             <div class="leadforge-title">LEADFORGE <span style="color:#6366f1; font-weight:400;">| Review Screen</span></div>
             <div class="leadforge-subtitle">Stage 6 Human-in-the-Loop Review Dashboard — Inspect real business findings, audit website health, analyze Stage 4 scoring breakdowns, refine outreach emails, and approve for sandbox delivery.</div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
     total_count = len(leads_list)
     approved_count = sum(1 for l in leads_list if l.get("decision") in ["approve", "edit"])
@@ -849,39 +828,20 @@ def render_app():
                     lband = l.get("band")
                     ldec = l.get("decision", "pending")
                     
-                    if lband == "A":
-                        band_css = "badge-band-a"
-                        band_txt = f"Band A · {lscore}"
-                    elif lband == "B":
-                        band_css = "badge-band-b"
-                        band_txt = f"Band B · {lscore}"
-                    elif lband == "C":
-                        band_css = "badge-band-c"
-                        band_txt = f"Band C · {lscore}"
-                    elif lband == "D":
-                        band_css = "badge-band-d"
-                        band_txt = f"Band D · {lscore}"
-                    else:
-                        band_css = "badge-band-c"
-                        band_txt = "Score Pending"
-                        
-                    status_css = "badge-status-approved" if ldec in ["approve", "edit"] else ("badge-status-rejected" if ldec == "reject" else "badge-status-pending")
-                    status_txt = "APPROVED" if ldec in ["approve", "edit"] else ("REJECTED" if ldec == "reject" else "PENDING")
+                    dec_label = "Approved" if ldec in ["approve", "edit"] else ("Rejected" if ldec == "reject" else "Pending")
+                    val_str = " [VAL]" if lid in validation_ranks else ""
                     
-                    val_tag = '<span class="badge badge-validated" style="font-size:0.65rem; padding:0.1rem 0.4rem; margin-right:0.3rem;">VAL</span>' if lid in validation_ranks else ''
-                    
-                    st.markdown(f"""
+                    st.markdown(textwrap.dedent(f"""
                     <div style="background: rgba(15, 23, 42, 0.6); padding: 0.55rem 0.8rem; border-radius: 8px; margin-bottom: 0.45rem; border: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <div style="font-weight: 600; font-size: 0.85rem; color: #f8fafc;">{val_tag}{lname}</div>
+                            <div style="font-weight: 600; font-size: 0.85rem; color: #f8fafc;">{lname}{val_str}</div>
                             <div style="font-size: 0.75rem; color: #64748b;">{lid} · {l.get('city', '')}</div>
                         </div>
-                        <div style="text-align: right;">
-                            <span class="badge {band_css}">{band_txt}</span>
-                            <div style="margin-top: 0.2rem;"><span class="badge {status_css}">{status_txt}</span></div>
+                        <div style="text-align: right; font-size: 0.8rem; color: #94a3b8; font-weight: 600;">
+                            Band {lband or '-'} · {lscore}pts<br><span style="font-size: 0.72rem; color: #60a5fa;">{dec_label}</span>
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """), unsafe_allow_html=True)
                 if len(filtered_leads) > 8:
                     st.caption(f"... and {len(filtered_leads) - 8} more leads in queue.")
 
@@ -915,52 +875,22 @@ def render_app():
                 desktop_img = selected_lead.get("desktop_screenshot") or selected_lead.get("screenshot_desktop") or ""
                 mobile_img = selected_lead.get("mobile_screenshot") or selected_lead.get("screenshot_mobile") or ""
                 
-                # Header Styling
-                if band == "A":
-                    band_css = "badge-band-a"
-                    band_txt = f"Band A · {score}/100"
-                elif band == "B":
-                    band_css = "badge-band-b"
-                    band_txt = f"Band B · {score}/100"
-                elif band == "C":
-                    band_css = "badge-band-c"
-                    band_txt = f"Band C · {score}/100"
-                elif band == "D":
-                    band_css = "badge-band-d"
-                    band_txt = f"Band D · {score}/100"
-                else:
-                    band_css = "badge-band-c"
-                    band_txt = "Score Pending"
-                    
-                status_css = "badge-status-approved" if current_decision in ["approve", "edit"] else ("badge-status-rejected" if current_decision == "reject" else "badge-status-pending")
-                status_txt = "APPROVED" if current_decision in ["approve", "edit"] else ("REJECTED" if current_decision == "reject" else "PENDING REVIEW")
-                
-                val_badge_html = f'<span class="badge badge-validated" style="font-size:0.75rem; margin-right:0.4rem;">Human Ranked (Avg #{val_info.get("avg_human_rank", "-"):.1f})</span>' if val_info and val_info.get("avg_human_rank") else ''
-                
-                st.markdown(f"""
+                # Clean, boundary-safe lead header without overflow tags
+                st.markdown(textwrap.dedent(f"""
                 <div style="background:#1e293b; padding:1.35rem; border-radius:12px; border:1px solid rgba(255,255,255,0.08); margin-bottom:1rem;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem;">
-                        <div>
-                            <h2 style="margin:0; font-size:1.6rem; color:#f8fafc; font-weight:800;">{name}</h2>
-                            <div style="margin-top:0.4rem; font-size:0.9rem; color:#94a3b8;">
-                                <a href="{website_url}" target="_blank" style="color:#38bdf8; text-decoration:none; font-weight:600;">{domain or website_url}</a>
-                                &nbsp;·&nbsp; Location: {city} &nbsp;·&nbsp; Category: {category} &nbsp;·&nbsp; Phone: {phone or 'No phone listed'}
-                            </div>
-                        </div>
-                        <div style="text-align:right;">
-                            {val_badge_html}
-                            <span class="badge {band_css}" style="font-size:0.85rem; padding:0.35rem 0.85rem;">{band_txt}</span>
-                            <div style="margin-top:0.4rem;"><span class="badge {status_css}">{status_txt}</span></div>
-                        </div>
+                    <h2 style="margin:0; font-size:1.6rem; color:#f8fafc; font-weight:800;">{name}</h2>
+                    <div style="margin-top:0.4rem; font-size:0.9rem; color:#94a3b8;">
+                        <a href="{website_url}" target="_blank" style="color:#38bdf8; text-decoration:none; font-weight:600;">{domain or website_url}</a>
+                        &nbsp;·&nbsp; Location: {city} &nbsp;·&nbsp; Category: {category} &nbsp;·&nbsp; Phone: {phone or 'No phone listed'}
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
                 
                 # Health checklist strip (if Stage 2 audit is present)
                 if audit_status is not None or loads_5s is not None:
                     load_time_str = f"{load_time:.2f}s" if load_time is not None else ("<5s" if loads_5s else ">5s")
                     
-                    st.markdown(f"""
+                    st.markdown(textwrap.dedent(f"""
                     <div style="margin-bottom:1rem;">
                         <span class="health-pill" style="color:{'#4ade80' if audit_status == 'success' else ('#fb7185' if audit_status == 'error' else '#60a5fa')};">
                             Status: {audit_status.upper() if audit_status else 'Audited'}
@@ -984,7 +914,7 @@ def render_app():
                             Meta Description: {'Present' if meta_ok else 'Missing'}
                         </span>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """), unsafe_allow_html=True)
                     
                     if audit_error:
                         st.warning(f"Audit Note: {audit_error}")
@@ -1000,12 +930,12 @@ def render_app():
                                 pts = item["points"]
                                 max_p = item["max_points"]
                                 col = "#4ade80" if pts > 0 else "#94a3b8"
-                                st.markdown(f"""
+                                st.markdown(textwrap.dedent(f"""
                                 <div class="score-item">
                                     <span><strong>{item['category']}:</strong> {item['name']}</span>
                                     <span style="font-weight:700; color:{col};">+{pts} pts <span style="font-size:0.75rem; color:#64748b;">(max {max_p})</span></span>
                                 </div>
-                                """, unsafe_allow_html=True)
+                                """), unsafe_allow_html=True)
                         with sb_col2:
                             st.markdown("###### Score Summary:")
                             st.metric("Total Score", f"{score} / 100", f"Band {band}")
@@ -1027,26 +957,26 @@ def render_app():
                     if desktop_img and os.path.exists(desktop_img):
                         st.image(desktop_img, width="stretch")
                     else:
-                        st.markdown(f"""
+                        st.markdown(textwrap.dedent(f"""
                         <div class="screenshot-fallback">
                             <div style="font-size: 0.85rem; font-weight:700; color:#94a3b8; margin-bottom:0.3rem;">DESKTOP VIEWPORT</div>
                             <strong>Screenshot Pending</strong>
                             <div style="margin-top:0.25rem; font-size:0.75rem; color:#64748b;">Target: <code>{desktop_img or f'screenshots/{lid}_desktop.png'}</code></div>
                         </div>
-                        """, unsafe_allow_html=True)
+                        """), unsafe_allow_html=True)
                         
                 with sc_col2:
                     st.caption("Mobile Viewport")
                     if mobile_img and os.path.exists(mobile_img):
                         st.image(mobile_img, width="stretch")
                     else:
-                        st.markdown(f"""
+                        st.markdown(textwrap.dedent(f"""
                         <div class="screenshot-fallback">
                             <div style="font-size: 0.85rem; font-weight:700; color:#94a3b8; margin-bottom:0.3rem;">MOBILE VIEWPORT</div>
                             <strong>Screenshot Pending</strong>
                             <div style="margin-top:0.25rem; font-size:0.75rem; color:#64748b;">Target: <code>{mobile_img or f'screenshots/{lid}_mobile.png'}</code></div>
                         </div>
-                        """, unsafe_allow_html=True)
+                        """), unsafe_allow_html=True)
                         
                 # Extracted website text - always available when in JSON
                 if site_text:
@@ -1070,7 +1000,7 @@ def render_app():
                         
                         quote_html = f'<div class="finding-quote">"{quote}"</div>' if quote else '<div style="font-size:0.78rem; color:#64748b; margin-top:0.25rem; font-style:italic;">Observation from website analysis</div>'
                         
-                        st.markdown(f"""
+                        st.markdown(textwrap.dedent(f"""
                         <div class="finding-box">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span class="finding-claim">{claim}</span>
@@ -1078,7 +1008,7 @@ def render_app():
                             </div>
                             {quote_html}
                         </div>
-                        """, unsafe_allow_html=True)
+                        """), unsafe_allow_html=True)
                         
                 st.markdown("---")
                 
@@ -1209,7 +1139,7 @@ def render_app():
                 
             st.markdown("---")
             st.markdown("#### Scorecard Limitations & Key Insights (Stage 4 Documentation)")
-            st.markdown("""
+            st.markdown(textwrap.dedent("""
             > **Spearman Correlation Finding:** The blind human ranking validation on 20 leads produced **ρ = -0.691 (p = 0.0008)**.
             > 
             > **Diagnosis & Framing:** Reviewers initially ranked by "best-looking business" rather than "best sales opportunity" (a broken site is an opportunity for a web agency). When framed correctly, this sign-flips to strong agreement (**ρ = +0.691**).
@@ -1218,7 +1148,7 @@ def render_app():
             > 1. **Conversion Findings:** 49/225 findings passed quote verification, ensuring high precision for outreach hooks.
             > 2. **Spam Filtering:** Known edge case `sd_0014` (unrelated scraped content) was identified and documented for future scraper filtering.
             > 3. **High-Value Bands:** Bands A and B cleanly isolate actionable leads with multiple verifiable website flaws.
-            """)
+            """))
 
     # ==============================================================================
     # TAB 3: LIVE TEAMMATE PIPELINE TRACKER
@@ -1238,7 +1168,7 @@ def render_app():
             status_badge = f'<span style="color:#4ade80; font-weight:700;">[Active: {row_count} rows]</span>' if file_exists else '<span style="color:#94a3b8; font-weight:500;">[Waiting]</span>'
             
             with stage_cols[col_idx]:
-                st.markdown(f"""
+                st.markdown(textwrap.dedent(f"""
                 <div class="pipeline-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-weight:800; font-size:1.1rem; color:#f8fafc;">Stage {s['stage_num']} · {s['name']}</span>
@@ -1248,7 +1178,7 @@ def render_app():
                     <div style="color:#94a3b8; font-size:0.8rem; margin-top:0.35rem;">{s['desc']}</div>
                     <div style="margin-top:0.5rem; font-size:0.75rem; color:#64748b;">File: <code>{s['file']}</code></div>
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
                 
         st.markdown("---")
         st.markdown("#### Preview Teammate Dataset")
