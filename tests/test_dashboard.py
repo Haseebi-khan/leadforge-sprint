@@ -7,9 +7,7 @@ from app import (
     load_jsonl,
     save_decision,
     load_decisions,
-    remove_decision,
-    load_ranking_sheet,
-    compute_score_breakdown
+    remove_decision
 )
 
 def test_real_pipeline_schema():
@@ -37,49 +35,6 @@ def test_real_pipeline_schema():
             print(f"[PASS] {p} verified ({len(records)} real records adhere to schema).")
             
     assert found_any, "No real data files found in data/"
-
-
-def test_ranking_sheet_loading():
-    ranks = load_ranking_sheet()
-    if os.path.exists(os.path.join("data", "ranking_sheet_filled.csv")):
-        assert len(ranks) == 20, f"Expected 20 ranked leads, got {len(ranks)}"
-        sample_id = next(iter(ranks))
-        assert "lead_id" in ranks[sample_id]
-        assert "name" in ranks[sample_id]
-        assert "avg_human_rank" in ranks[sample_id]
-        print(f"[PASS] load_ranking_sheet verified ({len(ranks)} human validation ranks loaded).")
-
-
-def test_score_breakdown():
-    mock_lead = {
-        "lead_id": "test_01",
-        "name": "Test Bistro",
-        "category": "restaurant",
-        "phone_visible": False,
-        "contact_form": False,
-        "loads_under_5_seconds": False,
-        "horizontal_scroll_mobile": True,
-        "meta_description_present": False,
-        "site_text": "A" * 600,
-        "status": "error",
-        "findings": [
-            {
-                "claim": "No booking form",
-                "quote": "contact us",
-                "category": "conversion",
-                "quote_verified": True
-            }
-        ]
-    }
-    breakdown = compute_score_breakdown(mock_lead)
-    assert len(breakdown) > 0
-    categories = {b["category"] for b in breakdown}
-    assert "Site Health" in categories
-    assert "Technical Audit" in categories
-    assert "Stage 3 Research" in categories
-    assert "Content Volume" in categories
-    assert "Category Match" in categories
-    print("[PASS] compute_score_breakdown verified across all 5 signal categories.")
 
 
 def test_decision_lifecycle():
@@ -144,7 +99,5 @@ def test_decision_lifecycle():
 
 if __name__ == "__main__":
     test_real_pipeline_schema()
-    test_ranking_sheet_loading()
-    test_score_breakdown()
     test_decision_lifecycle()
     print("ALL REAL PIPELINE TESTS PASSED SUCCESSFULLY!")

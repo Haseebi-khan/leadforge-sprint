@@ -1,6 +1,5 @@
 import os
 import json
-import csv
 import textwrap
 from datetime import datetime, timezone
 import pandas as pd
@@ -14,8 +13,6 @@ import streamlit as st
 # ==============================================================================
 
 DEFAULT_APPROVED_PATH = os.path.join("data", "06_approved.jsonl")
-RANKING_SHEET_FILLED_PATH = os.path.join("data", "ranking_sheet_filled.csv")
-RANKING_SHEET_PATH = os.path.join("data", "ranking_sheet.csv")
 
 # Pipeline stages metadata for live teammate data tracking
 PIPELINE_STAGES = [
@@ -42,10 +39,10 @@ PIPELINE_STAGES = [
     },
     {
         "stage_num": 4,
-        "name": "Scoring & Validation",
+        "name": "Scoring",
         "owner": "Azlan",
         "file": os.path.join("data", "04_scored.jsonl"),
-        "desc": "4-signal scoring (0-100), Bands (A/B/C/D), reasons & 20-lead human ranking validation"
+        "desc": "Opportunity scoring (0-100), Band assignment (A/B/C/D) & score reasons"
     },
     {
         "stage_num": 5,
@@ -71,8 +68,6 @@ PIPELINE_STAGES = [
 def find_available_datasets():
     """Discover all real JSONL pipeline data files present in workspace."""
     found = []
-    
-    # Priority order: latest stages first
     priority_paths = [
         os.path.join("data", "05_drafts.jsonl"),
         os.path.join("data", "04_scored.jsonl"),
@@ -81,18 +76,15 @@ def find_available_datasets():
         os.path.join("data", "01_leads.jsonl"),
         os.path.join("data", "06_approved.jsonl"),
     ]
-    
     for p in priority_paths:
         if os.path.exists(p) and p not in found:
             found.append(p)
             
-    # Check for any other stage jsonl files inside data/
     if os.path.exists("data"):
         for f in sorted(os.listdir("data")):
             full_p = os.path.join("data", f)
             if f.endswith(".jsonl") and "sample" not in f.lower() and full_p not in found:
                 found.append(full_p)
-                
     return found
 
 
@@ -127,10 +119,9 @@ def load_decisions(approved_file=DEFAULT_APPROVED_PATH):
 def save_decision(lead_record, decision, final_subject, final_body, reviewer="Umer Mujahid", approved_file=DEFAULT_APPROVED_PATH):
     """
     Append or update an approved/rejected lead in 06_approved.jsonl.
-    Follows Rule 1: Copies EVERY existing field through untouched, then adds decision metadata.
+    Copies every existing field through untouched, then adds decision metadata.
     """
     os.makedirs(os.path.dirname(approved_file), exist_ok=True)
-    
     existing_records = []
     if os.path.exists(approved_file):
         existing_records = load_jsonl(approved_file)
@@ -175,221 +166,6 @@ def remove_decision(lead_id, approved_file=DEFAULT_APPROVED_PATH):
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def load_ranking_sheet(csv_path=RANKING_SHEET_FILLED_PATH):
-    """
-    Load human validation rankings from Stage 4 ranking sheet CSV.
-    Returns a dict mapping lead_id to validation ranking dict.
-    """
-    if not os.path.exists(csv_path):
-        if os.path.exists(RANKING_SHEET_PATH):
-            csv_path = RANKING_SHEET_PATH
-        else:
-            return {}
-            
-    ranks = {}
-    try:
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            rank_cols = [c for c in (reader.fieldnames or []) if "human" in c.lower() and "rank" in c.lower()]
-            for row in reader:
-                lid = row.get("lead_id")
-                if not lid:
-                    continue
-                h_ranks = []
-                for c in rank_cols:
-                    val = row.get(c, "").strip()
-                    if val:
-                        try:
-                            h_ranks.append(float(val))
-                        except ValueError:
-                            pass
-                avg_rank = (sum(h_ranks) / len(h_ranks)) if h_ranks else None
-                ranks[lid] = {
-                    "lead_id": lid,
-                    "name": row.get("name"),
-                    "domain": row.get("domain"),
-                    "human1_rank": row.get("human1_rank_1_to_20") or row.get("human_rank_1_to_20"),
-                    "human2_rank": row.get("human2_rank_1_to_20"),
-                    "human3_rank": row.get("human3_rank_1_to_20"),
-                    "avg_human_rank": avg_rank,
-                    "site_status": row.get("site_status")
-                }
-    except Exception:
-        pass
-    return ranks
-
-
-def compute_score_breakdown(lead):
-    """
-    Calculate the detailed Stage 4 score breakdown based on active signals:
-    1. Site down (15 pts)
-    2. Visual/technical checks (up to 40 pts)
-    3. Stage 3 verified conversion findings (up to 25 pts)
-    4. Substantial site text proxy (up to 20 pts)
-    5. Category match bonus (up to 15 pts)
-    """
-    breakdown = []
-    
-    # Signal 0: Site failed to load
-    if lead.get("status") == "error":
-        breakdown.append({
-            "category": "Site Health",
-            "name": f"Site failed to load ({lead.get('error', 'error')})",
-            "points": 15,
-            "max_points": 15,
-            "status": "triggered"
-        })
-        
-    # Signal 1: Visual/Technical checks
-    # Check 1: Contact method
-    has_contact = lead.get("phone_visible") or lead.get("contact_form")
-    if "phone_visible" in lead or "contact_form" in lead:
-        if not has_contact:
-            breakdown.append({
-                "category": "Technical Audit",
-                "name": "No visible phone or contact form",
-                "points": 12,
-                "max_points": 12,
-                "status": "triggered"
-            })
-        else:
-            breakdown.append({
-                "category": "Technical Audit",
-                "name": "Contact method present",
-                "points": 0,
-                "max_points": 12,
-                "status": "passed"
-            })
-            
-    # Check 2: Mobile responsive
-    if "horizontal_scroll_mobile" in lead:
-        if lead.get("horizontal_scroll_mobile"):
-            breakdown.append({
-                "category": "Technical Audit",
-                "name": "Mobile horizontal-scroll issue",
-                "points": 10,
-                "max_points": 10,
-                "status": "triggered"
-            })
-        else:
-            breakdown.append({
-                "category": "Technical Audit",
-                "name": "Mobile responsive",
-                "points": 0,
-                "max_points": 10,
-                "status": "passed"
-            })
-            
-    # Check 3: Load speed
-    if "loads_under_5_seconds" in lead:
-        if lead.get("loads_under_5_seconds") is False:
-            breakdown.append({
-                "category": "Technical Audit",
-                "name": "Slow page load (> 5 seconds)",
-                "points": 10,
-                "max_points": 10,
-                "status": "triggered"
-            })
-        else:
-            breakdown.append({
-                "category": "Technical Audit",
-                "name": "Fast page load (< 5 seconds)",
-                "points": 0,
-                "max_points": 10,
-                "status": "passed"
-            })
-            
-    # Check 4: Meta description
-    if "meta_description_present" in lead:
-        if lead.get("meta_description_present") is False:
-            breakdown.append({
-                "category": "Technical Audit",
-                "name": "Missing meta description",
-                "points": 8,
-                "max_points": 8,
-                "status": "triggered"
-            })
-        else:
-            breakdown.append({
-                "category": "Technical Audit",
-                "name": "Meta description present",
-                "points": 0,
-                "max_points": 8,
-                "status": "passed"
-            })
-            
-    # Signal 2: Verified conversion findings (Stage 3)
-    findings = lead.get("findings", []) or []
-    conversion_findings = [
-        f for f in findings
-        if f.get("category") == "conversion" and f.get("quote_verified")
-    ]
-    if conversion_findings:
-        pts = min(len(conversion_findings) * 12, 25)
-        breakdown.append({
-            "category": "Stage 3 Research",
-            "name": f"{len(conversion_findings)} verified conversion finding(s)",
-            "points": pts,
-            "max_points": 25,
-            "status": "triggered"
-        })
-    else:
-        breakdown.append({
-            "category": "Stage 3 Research",
-            "name": "No verified conversion findings",
-            "points": 0,
-            "max_points": 25,
-            "status": "none"
-        })
-        
-    # Signal 3: Site text content volume
-    text_len = len(lead.get("site_text", "") or "")
-    if text_len >= 500:
-        breakdown.append({
-            "category": "Content Volume",
-            "name": f"Substantial site content ({text_len} chars)",
-            "points": 20,
-            "max_points": 20,
-            "status": "triggered"
-        })
-    elif text_len >= 150:
-        breakdown.append({
-            "category": "Content Volume",
-            "name": f"Moderate site content ({text_len} chars)",
-            "points": 10,
-            "max_points": 20,
-            "status": "partial"
-        })
-    else:
-        breakdown.append({
-            "category": "Content Volume",
-            "name": f"Thin site content ({text_len} chars - low confidence)",
-            "points": 0,
-            "max_points": 20,
-            "status": "none"
-        })
-        
-    # Signal 4: Target category match bonus
-    if lead.get("category") == "restaurant":
-        breakdown.append({
-            "category": "Category Match",
-            "name": "Target category match (restaurant)",
-            "points": 15,
-            "max_points": 15,
-            "status": "triggered"
-        })
-    elif lead.get("category"):
-        breakdown.append({
-            "category": "Category Match",
-            "name": f"Category: {lead.get('category')}",
-            "points": 0,
-            "max_points": 15,
-            "status": "none"
-        })
-        
-    return breakdown
-
-
 # ==============================================================================
 # UI RENDERING APPLICATION
 # ==============================================================================
@@ -401,7 +177,7 @@ def render_app():
         initial_sidebar_state="expanded"
     )
 
-    # Clean, professional styling
+    # Elegant, modern, centered styling
     st.markdown(textwrap.dedent("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -422,11 +198,6 @@ def render_app():
             margin-bottom: 1.4rem;
             border: 1px solid rgba(99, 102, 241, 0.2);
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 1rem;
         }
         
         .leadforge-title {
@@ -443,9 +214,9 @@ def render_app():
         .leadforge-subtitle {
             font-size: 0.9rem;
             color: #94a3b8;
-            margin-top: 0.3rem;
-            max-width: 750px;
-            line-height: 1.4;
+            margin-top: 0.35rem;
+            max-width: 800px;
+            line-height: 1.45;
         }
         
         /* Metric Box */
@@ -455,6 +226,10 @@ def render_app():
             border-radius: 10px;
             padding: 0.9rem 1rem;
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             transition: transform 0.15s ease, border-color 0.15s ease;
         }
         .metric-card:hover {
@@ -466,6 +241,8 @@ def render_app():
             font-weight: 800;
             color: #38bdf8;
             letter-spacing: -0.02em;
+            text-align: center;
+            line-height: 1.2;
         }
         .metric-label {
             font-size: 0.72rem;
@@ -474,6 +251,49 @@ def render_app():
             color: #94a3b8;
             font-weight: 600;
             margin-top: 0.25rem;
+            text-align: center;
+        }
+        
+        /* Centered Badge System */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            vertical-align: middle;
+            padding: 0.25rem 0.7rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            line-height: 1;
+        }
+        .badge-band-a { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.35); }
+        .badge-band-b { background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.35); }
+        .badge-band-c { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35); }
+        .badge-band-d { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.35); }
+        
+        .badge-status-approved { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+        .badge-status-rejected { background: rgba(244, 63, 94, 0.2); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); }
+        .badge-status-pending { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+        
+        /* Health Checklist Pill */
+        .health-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            vertical-align: middle;
+            background: #0f172a;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-right: 0.4rem;
+            margin-bottom: 0.4rem;
+            line-height: 1;
         }
         
         /* Findings Box */
@@ -482,7 +302,7 @@ def render_app():
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-left: 4px solid #6366f1;
             border-radius: 8px;
-            padding: 0.85rem 1.15rem;
+            padding: 0.9rem 1.15rem;
             margin-bottom: 0.75rem;
         }
         .finding-claim {
@@ -498,19 +318,6 @@ def render_app():
             line-height: 1.4;
         }
         
-        /* Score breakdown item */
-        .score-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.45rem 0.75rem;
-            background: rgba(15, 23, 42, 0.5);
-            border-radius: 6px;
-            margin-bottom: 0.4rem;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            font-size: 0.84rem;
-        }
-        
         /* Screenshot Fallback */
         .screenshot-fallback {
             background: #090d16;
@@ -520,20 +327,10 @@ def render_app():
             text-align: center;
             color: #64748b;
             font-size: 0.85rem;
-        }
-        
-        /* Health Checklist Pill */
-        .health-pill {
-            display: inline-flex;
+            display: flex;
+            flex-direction: column;
             align-items: center;
-            background: #0f172a;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 0.35rem 0.75rem;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin-right: 0.4rem;
-            margin-bottom: 0.4rem;
+            justify-content: center;
         }
         
         /* Pipeline Card */
@@ -555,10 +352,9 @@ def render_app():
 
     available_datasets = find_available_datasets()
     if not available_datasets:
-        st.sidebar.warning("No stage files found in data/. Run pipeline stages (01_collect.py, 02_visual.py, 04_score.py) to generate data.")
+        st.sidebar.warning("No stage files found in data/. Run pipeline stages to generate data.")
         st.stop()
 
-    # Format clean labels for datasets
     dataset_labels = {}
     for p in available_datasets:
         count = len(load_jsonl(p))
@@ -578,7 +374,6 @@ def render_app():
             label = f"{os.path.basename(p)} ({count} rows)"
         dataset_labels[label] = p
 
-    # Default to Stage 4 (scored real leads) or Stage 5 if available, else first available
     default_idx = 0
     labels_list = list(dataset_labels.keys())
     for idx, lbl in enumerate(labels_list):
@@ -593,7 +388,7 @@ def render_app():
         "Active Dataset",
         options=labels_list,
         index=default_idx,
-        help="Choose real upstream stage data to review in the dashboard."
+        help="Choose upstream stage data to review."
     )
     selected_dataset_path = dataset_labels[selected_dataset_label]
 
@@ -616,18 +411,6 @@ def render_app():
         default=["Pending", "Approved", "Rejected"]
     )
 
-    validation_only = st.sidebar.checkbox(
-        "Human-Validated Leads Only (20 sample)",
-        value=False,
-        help="Filter to the 20 leads independently ranked by teammates in Stage 4 validation."
-    )
-
-    conversion_only = st.sidebar.checkbox(
-        "Has Verified Conversion Finding",
-        value=False,
-        help="Filter to leads with verified quote conversion findings from Stage 3."
-    )
-
     sort_option = st.sidebar.selectbox(
         "Sort Leads",
         options=[
@@ -639,10 +422,9 @@ def render_app():
         index=0
     )
 
-    # Load active data, decisions, and ranking validation sheet
+    # Load active data & decisions
     raw_leads = load_jsonl(selected_dataset_path)
     saved_decisions = load_decisions(DEFAULT_APPROVED_PATH)
-    validation_ranks = load_ranking_sheet()
 
     # Cross-reference Stage 3 LLM findings if viewing another stage like Stage 4
     stage3_path = os.path.join("data", "03_research.jsonl")
@@ -659,13 +441,8 @@ def render_app():
         lid = lead.get("lead_id", "unknown_id")
         lead_copy = dict(lead)
         
-        # Enrich findings from Stage 3 if not present in active record
         if not lead_copy.get("findings") and lid in stage3_findings:
             lead_copy["findings"] = stage3_findings[lid]
-            
-        # Attach human validation ranking data if present
-        if lid in validation_ranks:
-            lead_copy["validation_rank"] = validation_ranks[lid]
             
         if lid in saved_decisions:
             lead_copy["decision"] = saved_decisions[lid].get("decision", "pending")
@@ -705,22 +482,13 @@ def render_app():
         if status_label not in status_filter:
             continue
             
-        if validation_only and lid not in validation_ranks:
-            continue
-            
-        if conversion_only:
-            findings = lead.get("findings", []) or []
-            has_conv = any(f.get("category") == "conversion" and f.get("quote_verified") for f in findings)
-            if not has_conv:
-                continue
-            
         filtered_leads.append(lead)
 
     # Sorting logic
     if sort_option == "Score: High to Low":
-        filtered_leads.sort(key=lambda x: x.get("score", 0), reverse=True)
+        filtered_leads.sort(key=lambda x: x.get("score", 0) if x.get("score") is not None else -1, reverse=True)
     elif sort_option == "Score: Low to High":
-        filtered_leads.sort(key=lambda x: x.get("score", 0))
+        filtered_leads.sort(key=lambda x: x.get("score", 0) if x.get("score") is not None else 999)
     elif sort_option == "Name: A to Z":
         filtered_leads.sort(key=lambda x: x.get("name", "").lower())
     elif sort_option == "Lead ID":
@@ -732,10 +500,8 @@ def render_app():
 
     st.markdown(textwrap.dedent("""
     <div class="leadforge-header">
-        <div>
-            <div class="leadforge-title">LEADFORGE <span style="color:#6366f1; font-weight:400;">| Review Screen</span></div>
-            <div class="leadforge-subtitle">Stage 6 Human-in-the-Loop Review Dashboard — Inspect real business findings, audit website health, analyze Stage 4 scoring breakdowns, refine outreach emails, and approve for sandbox delivery.</div>
-        </div>
+        <div class="leadforge-title">LEADFORGE <span style="color:#6366f1; font-weight:400;">| Review Screen</span></div>
+        <div class="leadforge-subtitle">Stage 6 Human-in-the-Loop Review Dashboard — Inspect real business findings, audit website health, refine outreach emails, and approve for sandbox delivery.</div>
     </div>
     """), unsafe_allow_html=True)
 
@@ -765,9 +531,8 @@ def render_app():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Main Navigation Tabs
-    tab_review, tab_scorecard_analytics, tab_pipeline, tab_approved_queue, tab_raw_inspector = st.tabs([
+    tab_review, tab_pipeline, tab_approved_queue, tab_raw_inspector = st.tabs([
         "Lead Review & Action",
-        "Scorecard & Ranking Validation",
         "Live Teammate Pipeline Tracker",
         f"Approved Outbox ({approved_count})",
         "Raw JSON Inspector"
@@ -789,7 +554,6 @@ def render_app():
                 
                 lead_options = {}
                 for l in filtered_leads:
-                    lid = l.get("lead_id", "unknown")
                     name = l.get("name", "Unknown Business")
                     score = l.get("score")
                     band = l.get("band")
@@ -829,12 +593,11 @@ def render_app():
                     ldec = l.get("decision", "pending")
                     
                     dec_label = "Approved" if ldec in ["approve", "edit"] else ("Rejected" if ldec == "reject" else "Pending")
-                    val_str = " [VAL]" if lid in validation_ranks else ""
                     
                     st.markdown(textwrap.dedent(f"""
-                    <div style="background: rgba(15, 23, 42, 0.6); padding: 0.55rem 0.8rem; border-radius: 8px; margin-bottom: 0.45rem; border: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: center;">
+                    <div style="background: rgba(15, 23, 42, 0.6); padding: 0.65rem 0.85rem; border-radius: 8px; margin-bottom: 0.45rem; border: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <div style="font-weight: 600; font-size: 0.85rem; color: #f8fafc;">{lname}{val_str}</div>
+                            <div style="font-weight: 600; font-size: 0.85rem; color: #f8fafc;">{lname}</div>
                             <div style="font-size: 0.75rem; color: #64748b;">{lid} · {l.get('city', '')}</div>
                         </div>
                         <div style="text-align: right; font-size: 0.8rem; color: #94a3b8; font-weight: 600;">
@@ -858,8 +621,6 @@ def render_app():
                 reasons = selected_lead.get("score_reasons", [])
                 findings = selected_lead.get("findings", [])
                 site_text = selected_lead.get("site_text", "")
-                current_decision = selected_lead.get("decision", "pending")
-                val_info = selected_lead.get("validation_rank") or validation_ranks.get(lid)
                 
                 # Visual audit fields from Stage 2
                 website_url = selected_lead.get("website_url") or (f"https://{domain}" if domain and not domain.startswith("http") else domain)
@@ -871,11 +632,10 @@ def render_app():
                 title_ok = selected_lead.get("title_present")
                 phone_vis = selected_lead.get("phone_visible")
                 audit_status = selected_lead.get("status")
-                audit_error = selected_lead.get("error")
                 desktop_img = selected_lead.get("desktop_screenshot") or selected_lead.get("screenshot_desktop") or ""
                 mobile_img = selected_lead.get("mobile_screenshot") or selected_lead.get("screenshot_mobile") or ""
                 
-                # Clean, boundary-safe lead header without overflow tags
+                # Clean, elegant lead header
                 st.markdown(textwrap.dedent(f"""
                 <div style="background:#1e293b; padding:1.35rem; border-radius:12px; border:1px solid rgba(255,255,255,0.08); margin-bottom:1rem;">
                     <h2 style="margin:0; font-size:1.6rem; color:#f8fafc; font-weight:800;">{name}</h2>
@@ -886,7 +646,7 @@ def render_app():
                 </div>
                 """), unsafe_allow_html=True)
                 
-                # Health checklist strip (if Stage 2 audit is present)
+                # Health checklist strip
                 if audit_status is not None or loads_5s is not None:
                     load_time_str = f"{load_time:.2f}s" if load_time is not None else ("<5s" if loads_5s else ">5s")
                     
@@ -915,38 +675,17 @@ def render_app():
                         </span>
                     </div>
                     """), unsafe_allow_html=True)
-                    
-                    if audit_error:
-                        st.warning(f"Audit Note: {audit_error}")
-                
-                # --- SECTION: STAGE 4 SCORECARD BREAKDOWN ---
-                if score is not None:
-                    with st.expander("Stage 4 Scorecard Breakdown & Points Signal Logic", expanded=True):
-                        score_items = compute_score_breakdown(selected_lead)
-                        sb_col1, sb_col2 = st.columns([1.8, 1.2])
-                        with sb_col1:
-                            st.markdown("###### Scoring Signal Breakdown:")
-                            for item in score_items:
-                                pts = item["points"]
-                                max_p = item["max_points"]
-                                col = "#4ade80" if pts > 0 else "#94a3b8"
-                                st.markdown(textwrap.dedent(f"""
-                                <div class="score-item">
-                                    <span><strong>{item['category']}:</strong> {item['name']}</span>
-                                    <span style="font-weight:700; color:{col};">+{pts} pts <span style="font-size:0.75rem; color:#64748b;">(max {max_p})</span></span>
-                                </div>
-                                """), unsafe_allow_html=True)
-                        with sb_col2:
-                            st.markdown("###### Score Summary:")
-                            st.metric("Total Score", f"{score} / 100", f"Band {band}")
-                            if reasons:
-                                st.markdown("<strong>Top Score Drivers:</strong>", unsafe_allow_html=True)
-                                for r in reasons:
-                                    st.markdown(f"- {r}")
-                            if val_info and val_info.get("avg_human_rank"):
-                                st.markdown("---")
-                                st.markdown(f"**Human Validation Rank:** #{val_info.get('avg_human_rank', '-'):.1f} / 20")
-                                st.caption(f"Rankings: Human 1: #{val_info.get('human1_rank')}, Human 2: #{val_info.get('human2_rank')}, Human 3: #{val_info.get('human3_rank')}")
+
+                # Stage 4 Score & Reasons (Direct from JSON, no fake calculations)
+                if score is not None or reasons:
+                    score_col1, score_col2 = st.columns([1, 2.5])
+                    with score_col1:
+                        st.metric("Opportunity Score", f"{score if score is not None else 'N/A'} / 100", f"Band {band or 'N/A'}")
+                    with score_col2:
+                        if reasons:
+                            st.markdown("<strong>Top Score Drivers (Stage 4):</strong>", unsafe_allow_html=True)
+                            for r in reasons:
+                                st.markdown(f"- {r}")
 
                 # --- SECTION: AUDIT SCREENSHOTS ---
                 st.markdown("#### Website Visual Audit")
@@ -978,7 +717,7 @@ def render_app():
                         </div>
                         """), unsafe_allow_html=True)
                         
-                # Extracted website text - always available when in JSON
+                # Extracted website text
                 if site_text:
                     with st.expander(f"Extracted Website Text ({len(site_text)} characters)", expanded=False):
                         st.text_area("Site Content", value=site_text, height=200, disabled=True)
@@ -1004,7 +743,7 @@ def render_app():
                         <div class="finding-box">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span class="finding-claim">{claim}</span>
-                                <span style="font-size:0.75rem; font-weight:700; color:{v_color};">{v_badge} · {cat}</span>
+                                <span style="font-size:0.75rem; font-weight:700; color:{v_color}; line-height:1;">{v_badge} · {cat}</span>
                             </div>
                             {quote_html}
                         </div>
@@ -1015,7 +754,6 @@ def render_app():
                 # --- SECTION: OUTREACH WORKBENCH ---
                 st.markdown("#### Outreach Email Workbench")
                 
-                # Outreach email fields strictly from JSON (Stage 5 - Amna Miraj)
                 default_subj = selected_lead.get("final_subject") or selected_lead.get("subject") or ""
                 default_body = selected_lead.get("final_body") or selected_lead.get("body") or ""
                 
@@ -1080,78 +818,7 @@ def render_app():
                     st.rerun()
 
     # ==============================================================================
-    # TAB 2: SCORECARD & RANKING VALIDATION ANALYTICS
-    # ==============================================================================
-
-    with tab_scorecard_analytics:
-        st.markdown("### Stage 4 Scorecard Distribution & Human Validation Benchmark")
-        st.write("Examine the real Stage 4 scoring distributions, signal triggers, and the 20-lead human ranking validation benchmark.")
-        
-        scored_leads = [l for l in leads_list if l.get("score") is not None]
-        
-        if not scored_leads:
-            st.info("No scored leads loaded. Select 'Stage 4: Scored Leads' in the sidebar.")
-        else:
-            an_col1, an_col2, an_col3, an_col4 = st.columns(4)
-            avg_score = sum(l.get("score", 0) for l in scored_leads) / len(scored_leads)
-            high_opp = sum(1 for l in scored_leads if l.get("band") in ["A", "B"])
-            conv_active = sum(1 for l in scored_leads if any(f.get("category") == "conversion" and f.get("quote_verified") for f in l.get("findings", [])))
-            speed_issues = sum(1 for l in scored_leads if l.get("loads_under_5_seconds") is False)
-            
-            with an_col1:
-                st.metric("Avg Opportunity Score", f"{avg_score:.1f} / 100", f"{len(scored_leads)} Scored Leads")
-            with an_col2:
-                st.metric("High Priority (Band A/B)", f"{high_opp} ({round((high_opp/len(scored_leads))*100)}%)", "Eligible for Stage 5 Outreach")
-            with an_col3:
-                st.metric("Verified Conversion Signals", f"{conv_active} leads", "Stage 3 Quote-Verified")
-            with an_col4:
-                st.metric("Speed Issues (>5s)", f"{speed_issues} leads", "Failed Desktop Speed Test")
-                
-            st.markdown("---")
-            
-            # Validation comparison table
-            st.markdown("#### 20-Lead Teammate Validation Benchmark")
-            st.write("In Stage 4 validation, 20 sample leads were ranked blind (1 = best opportunity to 20 = worst) by 3 teammates:")
-            
-            if validation_ranks:
-                val_table = []
-                for lid, vr in validation_ranks.items():
-                    matching_lead = next((l for l in scored_leads if l.get("lead_id") == lid), None)
-                    model_score = matching_lead.get("score") if matching_lead else None
-                    model_band = matching_lead.get("band") if matching_lead else None
-                    
-                    val_table.append({
-                        "Lead ID": lid,
-                        "Business Name": vr.get("name"),
-                        "Domain": vr.get("domain"),
-                        "Model Score": model_score,
-                        "Model Band": model_band,
-                        "Human 1 Rank": vr.get("human1_rank"),
-                        "Human 2 Rank": vr.get("human2_rank"),
-                        "Human 3 Rank": vr.get("human3_rank"),
-                        "Avg Human Rank": f"{vr.get('avg_human_rank'):.2f}" if vr.get("avg_human_rank") is not None else "N/A"
-                    })
-                    
-                df_val = pd.DataFrame(val_table)
-                st.dataframe(df_val, width="stretch")
-            else:
-                st.info("No ranking sheet found in `data/ranking_sheet_filled.csv`.")
-                
-            st.markdown("---")
-            st.markdown("#### Scorecard Limitations & Key Insights (Stage 4 Documentation)")
-            st.markdown(textwrap.dedent("""
-            > **Spearman Correlation Finding:** The blind human ranking validation on 20 leads produced **ρ = -0.691 (p = 0.0008)**.
-            > 
-            > **Diagnosis & Framing:** Reviewers initially ranked by "best-looking business" rather than "best sales opportunity" (a broken site is an opportunity for a web agency). When framed correctly, this sign-flips to strong agreement (**ρ = +0.691**).
-            > 
-            > **Key Takeaways:**
-            > 1. **Conversion Findings:** 49/225 findings passed quote verification, ensuring high precision for outreach hooks.
-            > 2. **Spam Filtering:** Known edge case `sd_0014` (unrelated scraped content) was identified and documented for future scraper filtering.
-            > 3. **High-Value Bands:** Bands A and B cleanly isolate actionable leads with multiple verifiable website flaws.
-            """))
-
-    # ==============================================================================
-    # TAB 3: LIVE TEAMMATE PIPELINE TRACKER
+    # TAB 2: LIVE TEAMMATE PIPELINE TRACKER
     # ==============================================================================
 
     with tab_pipeline:
@@ -1197,7 +864,7 @@ def render_app():
                 st.dataframe(df_preview[display_cols], width="stretch")
 
     # ==============================================================================
-    # TAB 4: APPROVED OUTBOX
+    # TAB 3: APPROVED OUTBOX
     # ==============================================================================
 
     with tab_approved_queue:
@@ -1239,7 +906,7 @@ def render_app():
             )
 
     # ==============================================================================
-    # TAB 5: RAW JSON INSPECTOR
+    # TAB 4: RAW JSON INSPECTOR
     # ==============================================================================
 
     with tab_raw_inspector:
